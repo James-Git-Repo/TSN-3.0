@@ -219,6 +219,15 @@
       .photo-wrap{ order:-1 }
     }
     </style>
+ <style>
+  /* Hide explicit editor-only controls while in viewer-lock */
+  .viewer-lock [data-editor-only],
+  .viewer-lock .only-editor { display:none !important; }
+
+  /* Optional: subtle dim for anything we auto-disable */
+  .viewer-lock .is-viewer-disabled { opacity:.65; filter:grayscale(.2); }
+</style>
+
     <style id="nav-fallback">
 /* Fallback: hamburger visibile solo <980px; menu a pannello */
 .nav-toggle{display:none;}
@@ -599,6 +608,73 @@
 
   // Compatibilità con il tuo "viewer"
   try { btn.setAttribute('data-view-allowed',''); nav.querySelectorAll('a').forEach(a=>a.setAttribute('data-view-allowed','')); } catch(_){}
+})();
+</script>
+<script>
+(function(){
+  // Heuristics to detect viewer mode (works with/without access-mode.js)
+  function detectViewer(){
+    const d = document.documentElement;
+    if (d.dataset.access === 'viewer') return true;                  // e.g. <html data-access="viewer">
+    if (d.classList.contains('viewer') || d.classList.contains('viewer-mode') || d.classList.contains('view')) return true;
+    const ls = localStorage.getItem('tsn_access_mode') || localStorage.getItem('access-mode');
+    return ls === 'viewer';
+  }
+
+  function inAllowedArea(el){
+    return el.hasAttribute('data-view-allowed') || !!el.closest('[data-view-allowed]');
+  }
+
+  function setViewerLock(on){
+    document.documentElement.classList.toggle('viewer-lock', on);
+
+    // Disable all form controls and contenteditable, except those marked data-view-allowed
+    const controls = document.querySelectorAll('input, textarea, select, button, [contenteditable]');
+    controls.forEach(el=>{
+      if (inAllowedArea(el)) return;
+      if (on){
+        el.setAttribute('data-view-disabled','');
+        el.classList.add('is-viewer-disabled');
+        if (el.matches('[contenteditable]')){
+          el.setAttribute('data-prev-contenteditable', el.getAttribute('contenteditable') || 'true');
+          el.setAttribute('contenteditable','false');
+        } else {
+          el.disabled = true;
+        }
+      } else if (el.hasAttribute('data-view-disabled')){
+        el.removeAttribute('data-view-disabled');
+        el.classList.remove('is-viewer-disabled');
+        if (el.matches('[contenteditable]')){
+          const prev = el.getAttribute('data-prev-contenteditable') || 'true';
+          el.setAttribute('contenteditable', prev);
+          el.removeAttribute('data-prev-contenteditable');
+        } else {
+          el.disabled = false;
+        }
+      }
+    });
+
+    // Block drag/drop photo + dropzone while in viewer
+    ['#photo','#dropzone'].forEach(sel=>{
+      const n = document.querySelector(sel);
+      if (!n) return;
+      n.style.pointerEvents = (on && !inAllowedArea(n)) ? 'none' : '';
+    });
+  }
+
+  // Initial state
+  setViewerLock(detectViewer());
+
+  // If your access-mode.js emits custom events, we support them:
+  //   window.dispatchEvent(new CustomEvent('tsn:modechange', { detail:{ mode:'viewer'|'editor' }}))
+  window.addEventListener('tsn:modechange', (e)=>{
+    setViewerLock(e.detail && e.detail.mode === 'viewer');
+  });
+
+  // Optional: react to storage changes (if another tab toggles mode)
+  window.addEventListener('storage', (e)=>{
+    if (e.key === 'tsn_access_mode' || e.key === 'access-mode') setViewerLock(detectViewer());
+  });
 })();
 </script>
 
