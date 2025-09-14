@@ -712,6 +712,66 @@
   };
 })();
 </script>
+  <script type="module">
+(async ()=>{
+  // Wait for window.supabase from sb-init.js
+  const supa = await new Promise(res=>{
+    if (window.supabase) return res(window.supabase);
+    let tries = 0; const id = setInterval(()=>{ tries++; if (window.supabase || tries>100){ clearInterval(id); res(window.supabase||null); } }, 30);
+  });
+
+  // Helper to set mode consistently
+  const setMode = (mode)=>{
+    if (typeof window.tsnSetViewerMode === 'function') window.tsnSetViewerMode(mode);
+    else {
+      // Fallback (shouldn't be needed)
+      document.documentElement.dataset.access = (mode==='editor'?'editor':'viewer');
+      localStorage.setItem('tsn_access_mode', (mode==='editor'?'editor':'viewer'));
+    }
+  };
+
+  // Default to viewer until proven editor
+  if (!localStorage.getItem('tsn_access_mode')) setMode('viewer');
+
+  // Initial session → mode
+  if (supa){
+    try{
+      const { data:{ session } } = await supa.auth.getSession();
+      setMode(session ? 'editor' : 'viewer');
+      supa.auth.onAuthStateChange((_e, s)=> setMode(s ? 'editor' : 'viewer'));
+    }catch{ /* stay viewer */ }
+  }
+
+  // Shortcuts:
+  // Ctrl+Shift+E → if logged in switch to editor, else open magic-link prompt
+  // Ctrl+Shift+L → switch to viewer + sign out
+  document.addEventListener('keydown', async (e)=>{
+    if (!(e.ctrlKey && e.shiftKey)) return;
+    const k = e.key.toLowerCase();
+
+    if (k === 'e'){
+      e.preventDefault();
+      if (!supa){ alert('Auth not available.'); return; }
+      const { data:{ session } } = await supa.auth.getSession();
+      if (session){ setMode('editor'); return; }
+      // Lightweight prompt
+      const email = prompt('Enter email for magic-link:');
+      if (!email) return;
+      try{
+        const { error } = await supa.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin + location.pathname } });
+        if (error) throw error;
+        alert('Check your inbox for the login link, then return to this page.');
+      }catch(err){ alert((err && err.message) || String(err)); }
+    }
+
+    if (k === 'l'){
+      e.preventDefault();
+      if (supa){ try{ await supa.auth.signOut(); }catch{} }
+      setMode('viewer');
+    }
+  });
+})();
+</script>
 
 
   <!-- Your modules -->
