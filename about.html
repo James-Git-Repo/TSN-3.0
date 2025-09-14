@@ -1,6 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <script>
+  // Default to VIEWER until auth proves otherwise
+  if (!localStorage.getItem('tsn_access_mode')) localStorage.setItem('tsn_access_mode','viewer');
+  document.documentElement.dataset.access = localStorage.getItem('tsn_access_mode'); // 'viewer' now
+</script>
+
   <link rel="stylesheet" href="assets/access-mode.css">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,7 +17,7 @@
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="sheet">
 
   <style>
     /* — Header parity with EMM — */
@@ -219,6 +225,19 @@
       .photo-wrap{ order:-1 }
     }
     </style>
+  <style>
+  /* Hide editor-only UI whenever viewer is active */
+  [data-access="viewer"] [data-editor-only],
+  [data-access="viewer"] .only-editor,
+  [data-view="viewer"]  [data-editor-only],
+  [data-view="viewer"]  .only-editor,
+  .viewer-lock [data-editor-only],
+  .viewer-lock .only-editor { display:none !important; }
+
+  /* Dim/disable anything we auto-lock */
+  .is-viewer-disabled { opacity:.65; filter:grayscale(.2); pointer-events:none; }
+</style>
+
  <style>
   /* Hide explicit editor-only controls while in viewer-lock */
   .viewer-lock [data-editor-only],
@@ -612,38 +631,42 @@
 </script>
 <script>
 (function(){
-  // Heuristics to detect viewer mode (works with/without access-mode.js)
-  function detectViewer(){
+  // Decide if we are in viewer mode
+  function isViewer(){
     const d = document.documentElement;
-    if (d.dataset.access === 'viewer') return true;                  // e.g. <html data-access="viewer">
-    if (d.classList.contains('viewer') || d.classList.contains('viewer-mode') || d.classList.contains('view')) return true;
+    const qp = new URLSearchParams(location.search);
+    if (qp.get('view') === 'viewer' || qp.get('mode') === 'viewer' || qp.get('viewer') === '1') return true;
+    if (d.dataset.view === 'viewer' || d.dataset.access === 'viewer') return true;  // <-- added data-view check
     const ls = localStorage.getItem('tsn_access_mode') || localStorage.getItem('access-mode');
     return ls === 'viewer';
   }
 
-  function inAllowedArea(el){
+  function allowed(el){
     return el.hasAttribute('data-view-allowed') || !!el.closest('[data-view-allowed]');
   }
 
-  function setViewerLock(on){
+  function applyLock(on){
     document.documentElement.classList.toggle('viewer-lock', on);
-
-    // Disable all form controls and contenteditable, except those marked data-view-allowed
-    const controls = document.querySelectorAll('input, textarea, select, button, [contenteditable]');
-    controls.forEach(el=>{
-      if (inAllowedArea(el)) return;
+    const nodes = document.querySelectorAll('input, textarea, select, button, [contenteditable], [role="textbox"], [role="spinbutton"], [role="combobox"], details, summary');
+    nodes.forEach(el=>{
+      if (allowed(el)) return;
       if (on){
-        el.setAttribute('data-view-disabled','');
-        el.classList.add('is-viewer-disabled');
+        if (!el.hasAttribute('data-view-disabled')){
+          el.setAttribute('data-view-disabled','');
+          const ti = el.getAttribute('tabindex');
+          if (ti !== null) el.setAttribute('data-prev-tabindex', ti);
+          el.setAttribute('tabindex','-1');
+        }
         if (el.matches('[contenteditable]')){
-          el.setAttribute('data-prev-contenteditable', el.getAttribute('contenteditable') || 'true');
+          if (!el.hasAttribute('data-prev-contenteditable')) el.setAttribute('data-prev-contenteditable', el.getAttribute('contenteditable') || 'true');
           el.setAttribute('contenteditable','false');
         } else {
           el.disabled = true;
         }
+        el.classList.add('is-viewer-disabled');
       } else if (el.hasAttribute('data-view-disabled')){
-        el.removeAttribute('data-view-disabled');
         el.classList.remove('is-viewer-disabled');
+        el.removeAttribute('data-view-disabled');
         if (el.matches('[contenteditable]')){
           const prev = el.getAttribute('data-prev-contenteditable') || 'true';
           el.setAttribute('contenteditable', prev);
@@ -651,32 +674,45 @@
         } else {
           el.disabled = false;
         }
+        if (el.hasAttribute('data-prev-tabindex')){
+          el.setAttribute('tabindex', el.getAttribute('data-prev-tabindex'));
+          el.removeAttribute('data-prev-tabindex');
+        } else {
+          el.removeAttribute('tabindex');
+        }
       }
     });
 
-    // Block drag/drop photo + dropzone while in viewer
-    ['#photo','#dropzone'].forEach(sel=>{
+    // Block dropzones/photo widgets unless allowed
+    ['#photo','#dropzone','#photoFile'].forEach(sel=>{
       const n = document.querySelector(sel);
       if (!n) return;
-      n.style.pointerEvents = (on && !inAllowedArea(n)) ? 'none' : '';
+      n.style.pointerEvents = (on && !allowed(n)) ? 'none' : '';
+    });
+
+    // Prevent submit on disallowed forms
+    document.querySelectorAll('form').forEach(f=>{
+      if (allowed(f) || !on) { f.onsubmit = null; return; }
+      f.onsubmit = (e)=>{ e.preventDefault(); e.stopPropagation(); return false; };
     });
   }
 
-  // Initial state
-  setViewerLock(detectViewer());
+  let locked = isViewer();
+  applyLock(locked);
 
-  // If your access-mode.js emits custom events, we support them:
-  //   window.dispatchEvent(new CustomEvent('tsn:modechange', { detail:{ mode:'viewer'|'editor' }}))
-  window.addEventListener('tsn:modechange', (e)=>{
-    setViewerLock(e.detail && e.detail.mode === 'viewer');
-  });
+  const mo = new MutationObserver(()=>{ applyLock(isViewer()); });
+  mo.observe(document, {subtree:true, childList:true, attributes:true, attributeFilter:['class','data-view','data-access','data-view-allowed']});
 
-  // Optional: react to storage changes (if another tab toggles mode)
-  window.addEventListener('storage', (e)=>{
-    if (e.key === 'tsn_access_mode' || e.key === 'access-mode') setViewerLock(detectViewer());
-  });
+  // Public toggler (used by the auth bridge below)
+  window.tsnSetViewerMode = (mode)=>{
+    const v = (mode === 'editor') ? 'editor' : 'viewer';
+    document.documentElement.dataset.access = v;
+    localStorage.setItem('tsn_access_mode', v);
+    applyLock(v === 'viewer');
+  };
 })();
 </script>
+
 
   <!-- Your modules -->
   <script type="module" src="assets/sb-init.js"></script>
