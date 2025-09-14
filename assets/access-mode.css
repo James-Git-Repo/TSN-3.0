@@ -1,0 +1,39 @@
+/*! Access / View Mode styles (viewer locks editing) */
+html[data-mode="viewer"] .only-editor,
+html[data-mode="viewer"] [data-editor-only],
+html[data-mode="viewer"] .editor,
+html[data-mode="viewer"] .edit-toolbar,
+html[data-mode="viewer"] .edit-controls,
+html[data-mode="viewer"] #openCustomizer,
+html[data-mode="viewer"] .customize,
+html[data-mode="viewer"] .fab,
+html[data-mode="viewer"] [data-upload],
+html[data-mode="viewer"] .upload,
+html[data-mode="viewer"] input[type="file"],
+html[data-mode="viewer"] #toggleEdit,
+html[data-mode="viewer"] .editor-actions { display:none !important; }
+
+/* Disable inline editing safely */
+html[data-mode="viewer"] [contenteditable]{
+  pointer-events:none !important;
+  user-select:text;
+  outline: none !important;
+}
+html[data-mode="editor"] .edit-outline{ outline:1.5px dashed rgba(16,185,129,0.7); outline-offset:2px; }
+
+/* Optional: dim 'work' actions on EMM or similar without breaking reading */
+html[data-mode="viewer"] .work-action,
+html[data-mode="viewer"] [data-work]{
+  pointer-events:none !important;
+  opacity:.5;
+}
+
+/* Keep anchors and normal navigation working */
+a, button { touch-action: manipulation; }
+
+/* Footer centering helpers on home */
+.ft-wrap{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.ft-center{ order:3; width:100%; display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; text-align:center; }
+@media (max-width: 780px){
+  .ft-wrap{ gap:10px; }
+}
